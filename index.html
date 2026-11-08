@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard - AirBill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <section class="content">
+      <div class="grid g4 mb" id="stats"></div>
+
+      <div class="grid g2 mb" style="grid-template-columns:1.5fr 1fr">
+        <div class="card">
+          <div class="card-head"><h2>Revenue, last 7 days</h2><a href="payments.html">Payments &rarr;</a></div>
+          <div class="card-pad"><div class="chart" id="chart"></div></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Expiring soon</h2><a href="messages.html">Messages &rarr;</a></div>
+          <div id="expiring"></div>
+        </div>
+      </div>
+
+      <div class="grid g3 mb">
+        <div class="card"><div class="card-head"><h2>Recent payments</h2><a href="payments.html">View all</a></div><div id="pay"></div></div>
+        <div class="card"><div class="card-head"><h2>Latest messages</h2><a href="messages.html">View all</a></div><div id="msgs"></div></div>
+        <div class="card"><div class="card-head"><h2>Active subscribers</h2><a href="subscribers.html">View all</a></div><div id="subs"></div></div>
+      </div>
+
+      <div class="grid g3">
+        <div class="card"><div class="card-head"><h2>Packages</h2><a href="plans.html">Manage</a></div><div id="plans"></div></div>
+        <div class="card"><div class="card-head"><h2>MikroTik routers</h2><a href="mikrotik.html">Manage</a></div><div id="routers"></div></div>
+        <div class="card"><div class="card-head"><h2>Payment channels</h2><a href="billing.html">Manage</a></div><div id="modes"></div></div>
+      </div>
+    </section>
+  </div>
+</div>
+<script src="app.js"></script>
+<script>
+const A = App, db = A.get();
+A.shell('index', 'Dashboard', 'A quick overview of your WiFi business');
+
+const now = Date.now();
+const rows = db.customers.map(c => ({ c, sub: A.currentSub(db, c.id) })).map(r => ({ ...r, st: A.statusOf(r.sub) }));
+const active = rows.filter(r => r.st.k === 'active' || r.st.k === 'expiring');
+const expiring = rows.filter(r => r.st.k === 'expiring');
+const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+const monthRev = db.payments.filter(p => new Date(p.date) >= monthStart).reduce((s, p) => s + Number(p.amount), 0);
+
+const stat = (icon, lbl, val, sub) => `<div class="card stat"><div class="ico">${A.ic(icon)}</div><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="sub">${sub}</div></div>`;
+document.getElementById('stats').innerHTML =
+  stat('wifi', 'Active subscribers', active.length, `${expiring.length} expiring within 48h`) +
+  stat('users', 'Total customers', db.customers.length, `${db.customers.length - active.length} without active package`) +
+  stat('cash', 'Revenue this month', A.money(monthRev), `${db.payments.length} payments recorded`) +
+  stat('box', 'Packages offered', db.plans.filter(p => p.status === 'Active').length, `${db.routers.length} router(s) connected`);
+
+// chart
+const days = [];
+for (let i = 6; i >= 0; i--) { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i); days.push(d); }
+const totals = days.map(d => db.payments.filter(p => { const t = new Date(p.date); return t >= d && t < new Date(d.getTime() + A.D); }).reduce((s, p) => s + Number(p.amount), 0));
+const max = Math.max(...totals, 1);
+document.getElementById('chart').innerHTML = days.map((d, i) =>
+  `<div class="col"><em>${totals[i] ? totals[i].toLocaleString() : ''}</em><b style="height:${Math.max(3, totals[i] / max * 100)}%"></b><span>${d.toLocaleDateString('en-GB', { weekday: 'short' })}</span></div>`).join('');
+
+const empty = t => `<div class="empty">${t}</div>`;
+document.getElementById('expiring').innerHTML = expiring.length ? expiring.slice(0, 5).map(r =>
+  `<div class="mini-row"><div class="who"><div class="av">${A.initials(r.c.name)}</div><div><div class="strong">${A.esc(r.c.name)}</div><div class="small muted">${A.esc(r.c.account)}</div></div></div><span class="badge b-warn">${A.timeLeft(r.st.left)} left</span></div>`).join('') : empty('No packages expiring soon.');
+
+document.getElementById('pay').innerHTML = db.payments.length ? [...db.payments].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 4).map(p =>
+  `<div class="mini-row"><div><div class="mono strong">${A.esc(p.mpesaId)}</div><div class="small muted">${A.esc(p.account)} &middot; ${A.dshort(p.date)}</div></div><div class="strong">${A.money(p.amount)}</div></div>`).join('') : empty('No payments yet.');
+
+document.getElementById('msgs').innerHTML = db.messages.length ? [...db.messages].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 4).map(m => {
+  const c = A.custOf(db, m.customerId);
+  return `<div class="mini-row"><div style="min-width:0"><div class="strong">${A.esc(c ? c.name : m.phone)}</div><div class="small muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:230px">${A.esc(m.text)}</div></div><span class="badge ${m.type === 'reminder' ? 'b-warn' : 'b-ok'}">${m.type === 'reminder' ? 'Reminder' : 'Subscribed'}</span></div>`;
+}).join('') : empty('No messages sent yet.');
+
+document.getElementById('subs').innerHTML = active.length ? active.slice(0, 4).map(r =>
+  `<div class="mini-row"><div class="who"><div class="av">${A.initials(r.c.name)}</div><div><div class="strong">${A.esc(r.c.name)}</div><div class="small muted">${A.esc((A.planOf(db, r.sub.planId) || {}).name || '')}</div></div></div><span class="badge ${r.st.cls}">${A.timeLeft(r.st.left)}</span></div>`).join('') : empty('No active subscribers.');
+
+document.getElementById('plans').innerHTML = db.plans.length ? db.plans.slice(0, 4).map(p =>
+  `<div class="mini-row"><div><div class="strong">${A.esc(p.name)}</div><div class="small muted">${A.durLabel(p)} &middot; ${p.down}/${p.up} Mbps</div></div><div class="strong">${A.money(p.price)}</div></div>`).join('') : empty('No packages added.');
+
+document.getElementById('routers').innerHTML = db.routers.length ? db.routers.slice(0, 4).map(r =>
+  `<div class="mini-row"><div><div class="strong">${A.esc(r.name)}</div><div class="small muted mono">${A.esc(r.host)}:${r.port}</div></div><span class="badge ${r.status === 'Active' ? 'b-ok' : 'b-gray'}">${r.status}</span></div>`).join('') : empty('No routers added.');
+
+document.getElementById('modes').innerHTML = db.payModes.length ? db.payModes.slice(0, 4).map(m =>
+  `<div class="mini-row"><div class="strong">${A.esc(A.modeSummary(m))}</div><span class="badge ${m.status === 'Active' ? 'b-ok' : 'b-gray'}">${m.status}</span></div>`).join('') : empty('No payment channels set up.');
+</script>
+</body>
+</html>

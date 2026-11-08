@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Billing Setup - AirBill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <section class="content">
+      <div class="toolbar"><p class="muted small">Payment channels customers can use. Active channels are included in expiry reminders.</p><div class="sp"></div><button class="btn btn-gold" id="add"></button></div>
+      <div class="grid g3" id="grid"></div>
+    </section>
+  </div>
+</div>
+
+<div class="modal" id="m">
+  <div class="modal-card sm">
+    <div class="modal-head"><h2>Add Payment Mode</h2><button class="x" data-close>&times;</button></div>
+    <form id="f" novalidate>
+      <div class="modal-body">
+        <label>Payment type</label>
+        <div class="types" id="types" style="margin-bottom:20px"></div>
+        <div class="form-grid" id="fields"></div>
+        <div class="err" id="err" style="margin-top:14px"></div>
+      </div>
+      <div class="modal-foot"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-gold">Save payment mode</button></div>
+    </form>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+const A = App; let db = A.get(), type = 'paybill';
+A.shell('billing', 'Billing Setup', 'Register the ways customers can pay you');
+document.getElementById('add').innerHTML = A.ic('plus', 16) + ' Add payment mode';
+const $ = id => document.getElementById(id);
+
+const TYPES = {
+  bank: { title: 'Bank Account', icon: 'bank', fields: [['bankName', 'Bank name', 'e.g. Equity Bank'], ['accName', 'Account name', 'Name on the account'], ['accNo', 'Account number', ''], ['branch', 'Branch', 'e.g. Homa Bay']] },
+  till: { title: 'Till Number', icon: 'store', fields: [['till', 'Till number (Buy Goods)', 'e.g. 5123456'], ['bizName', 'Business name', 'Name shown to customers']] },
+  paybill: { title: 'Paybill', icon: 'hash', fields: [['paybill', 'Paybill number', 'e.g. 522522'], ['bizName', 'Business name', 'Name shown to customers'], ['accFormat', 'Account number to enter', 'e.g. Customer account number (WB10001)']] },
+  phone: { title: 'Safaricom Number', icon: 'phone', fields: [['phone', 'Safaricom number', '07XX XXX XXX'], ['accName', 'Registered name', 'Name registered on M-Pesa']] }
+};
+
+function renderTypes() {
+  $('types').innerHTML = Object.entries(TYPES).map(([k, t]) => `<button type="button" class="type-tile ${k === type ? 'sel' : ''}" data-k="${k}">${A.ic(t.icon, 24)}${t.title}</button>`).join('');
+  $('types').querySelectorAll('button').forEach(b => b.onclick = () => { type = b.dataset.k; renderTypes(); });
+  $('fields').innerHTML = TYPES[type].fields.map(f => `<div class="${TYPES[type].fields.length % 2 && f === TYPES[type].fields[TYPES[type].fields.length - 1] ? 'full' : ''}"><label>${f[1]} <span class="req">*</span></label><input data-f="${f[0]}" placeholder="${f[2]}"></div>`).join('') + `<div class="full"><label>Status</label><select id="st"><option>Active</option><option>Disabled</option></select></div>`;
+}
+
+function render() {
+  db = A.get();
+  $('grid').innerHTML = db.payModes.length ? db.payModes.map(m => {
+    const t = TYPES[m.type], f = m.fields;
+    const kv = t.fields.map(x => `<div><span>${x[1]}</span><span>${A.esc(f[x[0]] || '-')}</span></div>`).join('');
+    return `<div class="card card-pad ${m.status === 'Disabled' ? 'off' : ''}" style="display:flex;flex-direction:column;gap:16px;${m.status === 'Disabled' ? 'opacity:.65' : ''}">
+      <div style="display:flex;justify-content:space-between;align-items:center"><div class="who"><div class="av" style="width:44px;height:44px;border-radius:12px">${A.ic(t.icon, 22)}</div><div><div class="ptype" style="font-size:11px;letter-spacing:1.6px;text-transform:uppercase;color:var(--goldd);font-weight:700">${t.title}</div><h3 style="font-size:20px">${A.esc(A.modeSummary(m))}</h3></div></div><span class="badge ${m.status === 'Active' ? 'b-ok' : 'b-gray'}">${m.status}</span></div>
+      <div class="kv">${kv}</div>
+      <div class="pk-foot"><button class="btn btn-ghost btn-sm" data-c="${m.id}">Copy details</button><button class="btn btn-ghost btn-sm" data-t="${m.id}">${m.status === 'Active' ? 'Disable' : 'Enable'}</button><button class="btn btn-danger btn-sm" data-d="${m.id}" style="margin-left:auto">Delete</button></div></div>`;
+  }).join('') : `<div class="card empty" style="grid-column:1/-1"><div class="big">No payment modes yet</div>Add a paybill, till, bank account or Safaricom number.</div>`;
+  $('grid').querySelectorAll('[data-c]').forEach(b => b.onclick = () => { const m = db.payModes.find(x => x.id === b.dataset.c); A.copy(TYPES[m.type].title + '\n' + TYPES[m.type].fields.map(x => `${x[1]}: ${m.fields[x[0]]}`).join('\n')); });
+  $('grid').querySelectorAll('[data-t]').forEach(b => b.onclick = () => { const m = db.payModes.find(x => x.id === b.dataset.t); m.status = m.status === 'Active' ? 'Disabled' : 'Active'; A.save(db); render(); });
+  $('grid').querySelectorAll('[data-d]').forEach(b => b.onclick = () => { if (!confirm('Delete this payment mode?')) return; db.payModes = db.payModes.filter(x => x.id !== b.dataset.d); A.save(db); render(); A.toast('Payment mode deleted'); });
+}
+
+$('add').onclick = () => { type = 'paybill'; renderTypes(); $('err').style.display = 'none'; A.openModal('m'); };
+$('f').addEventListener('submit', e => {
+  e.preventDefault(); db = A.get();
+  const fields = {}; $('fields').querySelectorAll('[data-f]').forEach(i => fields[i.dataset.f] = i.value.trim());
+  const missing = TYPES[type].fields.find(f => !fields[f[0]]);
+  let msg = missing ? `Enter the ${missing[1].toLowerCase()}.` : '';
+  if (!msg && type === 'phone') { fields.phone = fields.phone.replace(/[\s-]/g, '').replace(/^\+?254/, '0'); if (!/^0[17]\d{8}$/.test(fields.phone)) msg = 'Enter a valid Safaricom number.'; }
+  if (!msg && (type === 'till' && !/^\d{5,7}$/.test(fields.till) || type === 'paybill' && !/^\d{5,7}$/.test(fields.paybill))) msg = 'The number should be 5 to 7 digits.';
+  if (!msg && type === 'bank' && !/^\d{6,18}$/.test(fields.accNo.replace(/\s/g, ''))) msg = 'Enter a valid bank account number.';
+  if (msg) { $('err').textContent = msg; $('err').style.display = 'block'; return; }
+  db.payModes.push({ id: A.uid('b'), type, status: $('st').value, fields });
+  A.save(db); A.closeModal('m'); A.toast('Payment mode added'); render();
+});
+render();
+</script>
+</body>
+</html>

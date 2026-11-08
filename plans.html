@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Packages - AirBill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <section class="content">
+      <div class="toolbar"><div class="sp"></div><button class="btn btn-gold" id="add"></button></div>
+      <div class="grid g3" id="grid"></div>
+    </section>
+  </div>
+</div>
+
+<div class="modal" id="m">
+  <div class="modal-card">
+    <div class="modal-head"><h2 id="mt">Add Package</h2><button class="x" data-close>&times;</button></div>
+    <form id="f" novalidate>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="form-sec">Package details</div>
+          <div><label>Package name <span class="req">*</span></label><input id="name" placeholder="e.g. Daily Standard"></div>
+          <div><label>Price (KES) <span class="req">*</span></label><input id="price" type="number" min="1" placeholder="50"></div>
+          <div><label>Validity period <span class="req">*</span></label>
+            <div class="inline"><input id="dv" type="number" min="1" value="1" style="width:40%"><select id="du"><option value="hours">Hour(s)</option><option value="days" selected>Day(s)</option><option value="months">Month(s)</option></select></div></div>
+          <div><label>Connection type</label><select id="type"><option>Hotspot</option><option>PPPoE</option></select></div>
+          <div class="form-sec">Speed &amp; limits</div>
+          <div><label>Download speed (Mbps) <span class="req">*</span></label><input id="down" type="number" min="1" placeholder="5"></div>
+          <div><label>Upload speed (Mbps) <span class="req">*</span></label><input id="up" type="number" min="1" placeholder="3"></div>
+          <div><label>Data limit</label><input id="data" placeholder="Unlimited or e.g. 20 GB" value="Unlimited"></div>
+          <div><label>Devices allowed</label><input id="dev" type="number" min="1" value="1"></div>
+          <div class="full"><label>MikroTik profile name</label><input id="profile" placeholder="e.g. hs-daily"><div class="hint">Must match the user-profile / PPP-profile name on your router.</div></div>
+          <div class="full"><label>Description</label><textarea id="desc" placeholder="Short description shown to staff"></textarea></div>
+          <div><label>Status</label><select id="status"><option>Active</option><option>Disabled</option></select></div>
+        </div>
+        <div class="err" id="err" style="margin-top:14px"></div>
+      </div>
+      <div class="modal-foot"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-gold">Save package</button></div>
+    </form>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+const A = App; let db = A.get(), editId = null;
+A.shell('plans', 'Packages', 'The WiFi packages you sell to customers');
+document.getElementById('add').innerHTML = A.ic('plus', 16) + ' Add package';
+const $ = id => document.getElementById(id);
+
+function render() {
+  db = A.get();
+  $('grid').innerHTML = db.plans.length ? db.plans.map(p => {
+    const users = db.customers.filter(c => { const s = A.currentSub(db, c.id); return s && s.planId === p.id && A.statusOf(s).k !== 'expired'; }).length;
+    return `<div class="card pk ${p.status === 'Disabled' ? 'off' : ''}">
+      <div style="display:flex;justify-content:space-between;align-items:center"><span class="ptype">${A.esc(p.type)}</span><span class="badge ${p.status === 'Active' ? 'b-ok' : 'b-gray'}">${p.status}</span></div>
+      <div><h3>${A.esc(p.name)}</h3><div class="small muted">${A.esc(p.desc || '')}</div></div>
+      <div class="price">${A.money(p.price)} <small>/ ${A.durLabel(p)}</small></div>
+      <ul class="feat"><li>${p.down} Mbps down / ${p.up} Mbps up</li><li>${A.esc(p.data)} data</li><li>${p.devices} device${p.devices > 1 ? 's' : ''}</li><li>${users} active subscriber${users === 1 ? '' : 's'}</li></ul>
+      <div class="pk-foot"><button class="btn btn-ghost btn-sm" data-e="${p.id}">Edit</button><button class="btn btn-ghost btn-sm" data-t="${p.id}">${p.status === 'Active' ? 'Disable' : 'Enable'}</button><button class="btn btn-danger btn-sm" data-d="${p.id}" style="margin-left:auto">Delete</button></div>
+    </div>`;
+  }).join('') : `<div class="card empty" style="grid-column:1/-1"><div class="big">No packages yet</div>Click "Add package" to create your first one.</div>`;
+  $('grid').querySelectorAll('[data-e]').forEach(b => b.onclick = () => openForm(b.dataset.e));
+  $('grid').querySelectorAll('[data-t]').forEach(b => b.onclick = () => { const p = A.planOf(db, b.dataset.t); p.status = p.status === 'Active' ? 'Disabled' : 'Active'; A.save(db); render(); });
+  $('grid').querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
+    const used = db.customers.some(c => c.planId === b.dataset.d);
+    if (used && !confirm('Customers are assigned to this package. Delete it anyway?')) return;
+    if (!used && !confirm('Delete this package?')) return;
+    db.plans = db.plans.filter(p => p.id !== b.dataset.d); A.save(db); render(); A.toast('Package deleted');
+  });
+}
+
+function openForm(id) {
+  editId = id || null; $('f').reset(); $('err').style.display = 'none';
+  $('mt').textContent = editId ? 'Edit Package' : 'Add Package';
+  if (editId) {
+    const p = A.planOf(db, editId);
+    $('name').value = p.name; $('price').value = p.price; $('dv').value = p.durationValue; $('du').value = p.durationUnit; $('type').value = p.type;
+    $('down').value = p.down; $('up').value = p.up; $('data').value = p.data; $('dev').value = p.devices; $('profile').value = p.profile; $('desc').value = p.desc; $('status').value = p.status;
+  }
+  A.openModal('m');
+}
+$('add').onclick = () => openForm();
+
+$('f').addEventListener('submit', e => {
+  e.preventDefault(); db = A.get();
+  const v = { name: $('name').value.trim(), price: Number($('price').value), durationValue: Number($('dv').value), durationUnit: $('du').value, type: $('type').value,
+    down: Number($('down').value), up: Number($('up').value), data: $('data').value.trim() || 'Unlimited', devices: Number($('dev').value) || 1,
+    profile: $('profile').value.trim(), desc: $('desc').value.trim(), status: $('status').value };
+  const msg = !v.name ? 'Enter a package name.' : !(v.price > 0) ? 'Enter a valid price.' : !(v.durationValue > 0) ? 'Enter the validity period.' : !(v.down > 0 && v.up > 0) ? 'Enter download and upload speeds.' : '';
+  if (msg) { $('err').textContent = msg; $('err').style.display = 'block'; return; }
+  if (editId) Object.assign(A.planOf(db, editId), v); else db.plans.push({ id: A.uid('p'), ...v });
+  A.save(db); A.closeModal('m'); A.toast(editId ? 'Package updated' : 'Package added'); render();
+});
+render();
+</script>
+</body>
+</html>

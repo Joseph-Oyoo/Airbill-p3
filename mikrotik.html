@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MikroTik Routers - AirBill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <section class="content">
+      <div class="toolbar"><div class="sp"></div><button class="btn btn-gold" id="add"></button></div>
+      <div class="grid g3" id="grid"></div>
+    </section>
+  </div>
+</div>
+
+<div class="modal" id="m">
+  <div class="modal-card">
+    <div class="modal-head"><h2 id="mt">Add MikroTik Router</h2><button class="x" data-close>&times;</button></div>
+    <form id="f" novalidate>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="form-sec">Router identity</div>
+          <div><label>Router name <span class="req">*</span></label><input id="name" placeholder="e.g. Main Tower"></div>
+          <div><label>Location / site</label><input id="loc" placeholder="e.g. Market Area"></div>
+          <div class="form-sec">API connection</div>
+          <div><label>IP address or hostname <span class="req">*</span></label><input id="host" placeholder="e.g. 192.168.88.1"></div>
+          <div><label>API port <span class="req">*</span></label><input id="port" type="number" value="8728"><div class="hint">8728 for API, 8729 for API-SSL.</div></div>
+          <div><label>API username <span class="req">*</span></label><input id="user" placeholder="billing" autocomplete="off"></div>
+          <div><label>API password <span class="req">*</span></label><input id="pass" type="password" autocomplete="new-password"></div>
+          <div><label>Hotspot / PPPoE interface</label><input id="iface" placeholder="e.g. bridge-hotspot"></div>
+          <div><label>Status</label><select id="status"><option>Active</option><option>Disabled</option></select></div>
+          <div class="full"><label class="check"><input type="checkbox" id="ssl"> Use secure API (API-SSL)</label></div>
+        </div>
+        <div class="err" id="err" style="margin-top:14px"></div>
+      </div>
+      <div class="modal-foot"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-gold">Save router</button></div>
+    </form>
+  </div>
+</div>
+
+<div class="modal" id="sm">
+  <div class="modal-card">
+    <div class="modal-head"><h2>Router setup script</h2><button class="x" data-close>&times;</button></div>
+    <div class="modal-body">
+      <p class="small muted" style="margin-bottom:12px">Paste this into the MikroTik <b>New Terminal</b> (Winbox) to prepare the router for the billing system. Change the password before running it.</p>
+      <pre class="code" id="script"></pre>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" data-close>Close</button><button class="btn btn-dark" id="cp">Copy script</button></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+const A = App; let db = A.get(), editId = null;
+A.shell('mikrotik', 'MikroTik Routers', 'Add and manage the routers connected to your billing system');
+document.getElementById('add').innerHTML = A.ic('plus', 16) + ' Add MikroTik';
+const $ = id => document.getElementById(id);
+
+function render() {
+  db = A.get();
+  $('grid').innerHTML = db.routers.length ? db.routers.map(r => {
+    const n = db.customers.filter(c => c.routerId === r.id).length;
+    return `<div class="card card-pad" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start"><div class="who"><div class="av" style="width:44px;height:44px">${A.ic('router', 22)}</div><div><h3 style="font-size:20px">${A.esc(r.name)}</h3><div class="small muted">${A.esc(r.location || 'No location')}</div></div></div><span class="badge ${r.status === 'Active' ? 'b-ok' : 'b-gray'}">${r.status}</span></div>
+      <div class="kv"><div><span>Address</span><span class="mono">${A.esc(r.host)}:${r.port}</span></div><div><span>API user</span><span>${A.esc(r.user)}</span></div><div><span>Security</span><span>${r.ssl ? 'API-SSL' : 'API'}</span></div><div><span>Interface</span><span>${A.esc(r.iface || '-')}</span></div><div><span>Customers</span><span>${n}</span></div></div>
+      <div class="pk-foot"><button class="btn btn-ghost btn-sm" data-s="${r.id}">Setup script</button><button class="btn btn-ghost btn-sm" data-e="${r.id}">Edit</button><button class="btn btn-danger btn-sm" data-d="${r.id}" style="margin-left:auto">Delete</button></div>
+    </div>`;
+  }).join('') : `<div class="card empty" style="grid-column:1/-1"><div class="big">No routers yet</div>Click "Add MikroTik" to connect your first router.</div>`;
+  $('grid').querySelectorAll('[data-e]').forEach(b => b.onclick = () => openForm(b.dataset.e));
+  $('grid').querySelectorAll('[data-s]').forEach(b => b.onclick = () => showScript(A.routerOf(db, b.dataset.s)));
+  $('grid').querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
+    if (!confirm('Delete this router?')) return;
+    db.routers = db.routers.filter(r => r.id !== b.dataset.d); A.save(db); render(); A.toast('Router deleted');
+  });
+}
+
+function showScript(r) {
+  const s = `# Enable the API service
+/ip service set api disabled=no port=${r.port == 8729 ? 8728 : r.port}
+${r.ssl ? '/ip service set api-ssl disabled=no port=' + r.port + '\n' : ''}
+# Create a dedicated API user for the billing system
+/user group add name=billing policy=api,read,write,policy,test,winbox
+/user add name=${r.user} group=billing password=CHANGE_THIS_PASSWORD
+
+# Only allow API access from your billing server
+# /ip service set api address=YOUR.SERVER.IP/32`;
+  $('script').textContent = s; $('cp').onclick = () => A.copy(s); A.openModal('sm');
+}
+
+function openForm(id) {
+  editId = id || null; $('f').reset(); $('err').style.display = 'none';
+  $('mt').textContent = editId ? 'Edit MikroTik Router' : 'Add MikroTik Router';
+  if (editId) {
+    const r = A.routerOf(db, editId);
+    $('name').value = r.name; $('loc').value = r.location; $('host').value = r.host; $('port').value = r.port; $('user').value = r.user; $('pass').value = r.pass; $('iface').value = r.iface; $('status').value = r.status; $('ssl').checked = r.ssl;
+  }
+  A.openModal('m');
+}
+$('add').onclick = () => openForm();
+$('ssl').onchange = () => { if ($('ssl').checked && $('port').value == 8728) $('port').value = 8729; if (!$('ssl').checked && $('port').value == 8729) $('port').value = 8728; };
+
+$('f').addEventListener('submit', e => {
+  e.preventDefault(); db = A.get();
+  const v = { name: $('name').value.trim(), location: $('loc').value.trim(), host: $('host').value.trim(), port: Number($('port').value), user: $('user').value.trim(), pass: $('pass').value, iface: $('iface').value.trim(), status: $('status').value, ssl: $('ssl').checked };
+  const hostOk = /^(\d{1,3}\.){3}\d{1,3}$/.test(v.host) || /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/i.test(v.host);
+  const msg = !v.name ? 'Enter a router name.' : !v.host || !hostOk ? 'Enter a valid IP address or hostname.' : !(v.port > 0 && v.port < 65536) ? 'Enter a valid port.' : !v.user ? 'Enter the API username.' : (!editId && !v.pass) ? 'Enter the API password.' : '';
+  if (msg) { $('err').textContent = msg; $('err').style.display = 'block'; return; }
+  if (editId) Object.assign(A.routerOf(db, editId), v); else db.routers.push({ id: A.uid('m'), ...v });
+  A.save(db); A.closeModal('m'); A.toast(editId ? 'Router updated' : 'Router added'); render();
+});
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payments - AirBill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <section class="content">
+      <div class="grid g3 mb" id="stats"></div>
+
+      <div class="toolbar">
+        <div class="search"><span id="sIco"></span><input id="q" placeholder="Search M-Pesa ID, account or name"></div>
+        <div class="sp"></div>
+        <button class="btn btn-gold" id="add"></button>
+      </div>
+
+      <div class="card"><div class="table-wrap">
+        <table class="tbl">
+          <thead><tr><th>M-Pesa ID</th><th>Account No.</th><th>Customer</th><th>Package</th><th class="num">Amount Paid</th><th>Date</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div></div>
+    </section>
+  </div>
+</div>
+
+<div class="modal" id="m">
+  <div class="modal-card sm">
+    <div class="modal-head"><h2>Record Payment</h2><button class="x" data-close>&times;</button></div>
+    <form id="f" novalidate>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="full"><label>M-Pesa transaction ID <span class="req">*</span></label><input id="mid" maxlength="10" placeholder="e.g. TKB4X9Q2LM" style="text-transform:uppercase"><div class="err" id="e1"></div></div>
+          <div><label>Account number <span class="req">*</span></label><input id="acc" list="accs" placeholder="e.g. WB10001" style="text-transform:uppercase"><datalist id="accs"></datalist><div class="hint" id="who"></div><div class="err" id="e2"></div></div>
+          <div><label>Amount paid (KES) <span class="req">*</span></label><input id="amt" type="number" min="1" step="1" placeholder="0"><div class="err" id="e3"></div></div>
+          <div class="full"><label>Package to activate</label><select id="plan"></select></div>
+          <div class="full"><label class="check"><input type="checkbox" id="act" checked> Activate / extend the subscription and send confirmation message</label></div>
+        </div>
+      </div>
+      <div class="modal-foot"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-gold">Save payment</button></div>
+    </form>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+const A = App; let db = A.get();
+A.shell('payments', 'Payments', 'M-Pesa payments received, with account numbers');
+document.getElementById('sIco').innerHTML = A.ic('search', 16);
+document.getElementById('add').innerHTML = A.ic('plus', 16) + ' Record payment';
+const $ = id => document.getElementById(id);
+
+function render() {
+  db = A.get();
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const total = db.payments.reduce((s, p) => s + Number(p.amount), 0);
+  const tdy = db.payments.filter(p => new Date(p.date) >= today).reduce((s, p) => s + Number(p.amount), 0);
+  const st = (i, l, v, s) => `<div class="card stat"><div class="ico">${A.ic(i)}</div><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`;
+  $('stats').innerHTML = st('cash', 'Total received', A.money(total), 'All time') + st('clock', 'Received today', A.money(tdy), 'Since midnight') + st('hash', 'Transactions', db.payments.length, 'Recorded payments');
+
+  const q = $('q').value.trim().toLowerCase();
+  const list = [...db.payments].sort((a, b) => new Date(b.date) - new Date(a.date)).filter(p => {
+    const c = A.custOf(db, p.customerId);
+    return !q || (p.mpesaId + ' ' + p.account + ' ' + (c ? c.name : '')).toLowerCase().includes(q);
+  });
+  $('rows').innerHTML = list.length ? list.map(p => {
+    const c = A.custOf(db, p.customerId), pl = c ? A.planOf(db, p.planId || c.planId) : null;
+    return `<tr><td class="mono strong">${A.esc(p.mpesaId)}</td><td><span class="badge b-info">${A.esc(p.account)}</span></td><td>${c ? `<div class="who"><div class="av">${A.initials(c.name)}</div><div><div class="strong">${A.esc(c.name)}</div><div class="small muted">${A.esc(c.phone)}</div></div></div>` : '<span class="muted">Unknown</span>'}</td><td>${pl ? A.esc(pl.name) : '<span class="muted">-</span>'}</td><td class="num strong">${A.money(p.amount)}</td><td class="small muted">${A.dt(p.date)}</td></tr>`;
+  }).join('') : `<tr><td colspan="6"><div class="empty"><div class="big">No payments found</div>Record a payment to see it here.</div></td></tr>`;
+}
+$('q').addEventListener('input', render);
+
+function openForm() {
+  db = A.get();
+  $('f').reset();
+  ['e1', 'e2', 'e3'].forEach(i => $(i).style.display = 'none');
+  $('accs').innerHTML = db.customers.map(c => `<option value="${A.esc(c.account)}">${A.esc(c.name)}</option>`).join('');
+  $('plan').innerHTML = db.plans.filter(p => p.status === 'Active').map(p => `<option value="${p.id}">${A.esc(p.name)} - ${A.money(p.price)}</option>`).join('') || '<option value="">No packages available</option>';
+  $('who').textContent = '';
+  A.openModal('m');
+}
+$('add').onclick = openForm;
+
+$('acc').addEventListener('input', () => {
+  const c = db.customers.find(x => x.account === $('acc').value.trim().toUpperCase());
+  $('who').textContent = c ? `Customer: ${c.name}` : '';
+  if (c && c.planId && [...$('plan').options].some(o => o.value === c.planId)) $('plan').value = c.planId;
+});
+
+function bad(id, msg) { $(id).textContent = msg; $(id).style.display = 'block'; }
+
+$('f').addEventListener('submit', e => {
+  e.preventDefault(); db = A.get();
+  ['e1', 'e2', 'e3'].forEach(i => $(i).style.display = 'none');
+  const mid = $('mid').value.trim().toUpperCase(), acc = $('acc').value.trim().toUpperCase(), amt = Number($('amt').value);
+  let ok = true;
+  if (!/^[A-Z0-9]{10}$/.test(mid)) { bad('e1', 'M-Pesa IDs are 10 letters/numbers.'); ok = false; }
+  else if (db.payments.some(p => p.mpesaId === mid)) { bad('e1', 'This transaction ID is already recorded.'); ok = false; }
+  const c = db.customers.find(x => x.account === acc);
+  if (!c) { bad('e2', 'No customer with this account number.'); ok = false; }
+  if (!(amt > 0)) { bad('e3', 'Enter the amount paid.'); ok = false; }
+  if (!ok) return;
+
+  const planId = $('plan').value, plan = A.planOf(db, planId);
+  const pay = { id: A.uid('y'), mpesaId: mid, amount: amt, account: acc, customerId: c.id, phone: c.phone, planId, date: new Date().toISOString() };
+  db.payments.push(pay);
+  let note = 'Payment recorded';
+  if ($('act').checked) {
+    if (plan && amt >= Number(plan.price)) { A.activate(db, c.id, planId); note += ` - ${plan.name} activated for ${c.name}`; }
+    else { note += ' - not activated (amount is below the package price)'; }
+  }
+  A.save(db); A.closeModal('m'); A.toast(note); render();
+});
+render();
+</script>
+</body>
+</html>

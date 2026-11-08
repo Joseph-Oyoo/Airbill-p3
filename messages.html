@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Messages - AirBill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <section class="content">
+      <div class="grid mb" style="grid-template-columns:1fr 1.3fr;align-items:start" id="cols">
+        <div class="card">
+          <div class="card-head"><h2>Almost expiring</h2><button class="btn btn-gold btn-sm" id="all">Send all reminders</button></div>
+          <div id="exp"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Message log</h2>
+            <div class="tabs" id="tabs"><button class="on" data-t="all">All</button><button data-t="subscribed">Subscribed</button><button data-t="reminder">Reminders</button></div>
+          </div>
+          <div id="log"></div>
+        </div>
+      </div>
+      <p class="small muted">Messages are logged here when a customer subscribes or you send a reminder. To deliver them as real SMS, connect an SMS gateway (e.g. Africa's Talking) on the server side.</p>
+    </section>
+  </div>
+</div>
+<script src="app.js"></script>
+<script>
+const A = App; let db = A.get(), tab = 'all';
+A.shell('messages', 'Messages', 'Subscription confirmations and expiry reminders');
+const $ = id => document.getElementById(id);
+if (innerWidth < 900) $('cols').style.gridTemplateColumns = '1fr';
+
+function expiringList() {
+  return db.customers.map(c => ({ c, sub: A.currentSub(db, c.id) })).map(r => ({ ...r, st: A.statusOf(r.sub) }))
+    .filter(r => r.st.k === 'expiring' || r.st.k === 'expired' && r.st.left > -A.D)
+    .sort((a, b) => new Date(a.sub.expiry) - new Date(b.sub.expiry));
+}
+const remindedRecently = cid => db.messages.some(m => m.customerId === cid && m.type === 'reminder' && Date.now() - new Date(m.date) < 12 * A.H);
+
+function render() {
+  db = A.get();
+  const ex = expiringList();
+  $('all').style.display = ex.length ? '' : 'none';
+  $('exp').innerHTML = ex.length ? ex.map(r => {
+    const sent = remindedRecently(r.c.id);
+    return `<div class="mini-row"><div class="who"><div class="av">${A.initials(r.c.name)}</div><div><div class="strong">${A.esc(r.c.name)}</div><div class="small muted">${A.esc(r.c.phone)} &middot; ${A.esc((A.planOf(db, r.sub.planId) || {}).name || '')}</div><div style="margin-top:4px"><span class="badge ${r.st.cls}">${r.st.k === 'expired' ? 'Expired' : A.timeLeft(r.st.left) + ' left'}</span></div></div></div>
+      <button class="btn btn-ghost btn-sm" data-r="${r.c.id}" ${sent ? 'disabled style="opacity:.55"' : ''}>${sent ? 'Reminded' : 'Remind'}</button></div>`;
+  }).join('') : `<div class="empty"><div class="big">All clear</div>No packages expire in the next 48 hours.</div>`;
+  $('exp').querySelectorAll('[data-r]').forEach(b => b.onclick = () => { A.sendReminder(db, b.dataset.r); A.save(db); A.toast('Reminder sent'); render(); });
+
+  const list = [...db.messages].sort((a, b) => new Date(b.date) - new Date(a.date)).filter(m => tab === 'all' || m.type === tab);
+  $('log').innerHTML = list.length ? list.map(m => {
+    const c = A.custOf(db, m.customerId), rem = m.type === 'reminder';
+    return `<div class="msg"><div class="bubble-ico ${rem ? 'b-warn' : 'b-ok'}" style="${rem ? 'background:var(--warnbg);color:var(--warn)' : 'background:var(--okbg);color:var(--ok)'}">${A.ic(rem ? 'clock' : 'chat', 18)}</div>
+      <div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><span class="strong">${A.esc(c ? c.name : 'Customer')} <span class="muted small">&middot; ${A.esc(m.phone)}</span></span><span class="badge ${rem ? 'b-warn' : 'b-ok'}">${rem ? 'Reminder' : 'Subscribed'}</span></div>
+      <p>${A.esc(m.text)}</p><span class="small muted">${A.dt(m.date)}</span></div></div>`;
+  }).join('') : `<div class="empty"><div class="big">No messages</div>Nothing here yet.</div>`;
+}
+$('tabs').querySelectorAll('button').forEach(b => b.onclick = () => { tab = b.dataset.t; $('tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); render(); });
+$('all').onclick = () => {
+  const todo = expiringList().filter(r => !remindedRecently(r.c.id));
+  if (!todo.length) return A.toast('Everyone has already been reminded', true);
+  todo.forEach(r => A.sendReminder(db, r.c.id)); A.save(db); A.toast(`${todo.length} reminder(s) sent`); render();
+};
+render();
+</script>
+</body>
+</html>

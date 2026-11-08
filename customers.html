@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Customers - AirBill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <section class="content">
+      <div class="toolbar">
+        <div class="search"><span id="sIco"></span><input id="q" placeholder="Search name, phone or account"></div>
+        <div class="sp"></div>
+        <button class="btn btn-gold" id="add"></button>
+      </div>
+      <div class="card"><div class="table-wrap">
+        <table class="tbl">
+          <thead><tr><th>Customer</th><th>Account No.</th><th>Location</th><th>Connection</th><th>Package</th><th>Status</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div></div>
+    </section>
+  </div>
+</div>
+
+<div class="modal" id="m">
+  <div class="modal-card">
+    <div class="modal-head"><h2>Add Customer</h2><button class="x" data-close>&times;</button></div>
+    <form id="f" novalidate>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="form-sec">Personal details</div>
+          <div><label>Full name <span class="req">*</span></label><input id="name" placeholder="e.g. Achieng Otieno"></div>
+          <div><label>Phone number <span class="req">*</span></label><input id="phone" placeholder="07XX XXX XXX"><div class="hint">Used for SMS and M-Pesa matching.</div></div>
+          <div><label>Email</label><input id="email" type="email" placeholder="optional"></div>
+          <div><label>ID number</label><input id="idno" placeholder="optional"></div>
+          <div class="full"><label>Location / estate <span class="req">*</span></label><input id="loc" placeholder="e.g. Milimani, House 12"></div>
+
+          <div class="form-sec">Connection</div>
+          <div><label>Connection type</label><select id="ctype"><option>Hotspot</option><option>PPPoE</option></select></div>
+          <div><label>MikroTik router <span class="req">*</span></label><select id="router"></select></div>
+          <div><label>Username <span class="req">*</span></label><input id="user" placeholder="e.g. achieng" autocomplete="off"></div>
+          <div><label>Password <span class="req">*</span></label><input id="pwd" type="text" placeholder="Network password" autocomplete="off"></div>
+
+          <div class="form-sec">Package &amp; account</div>
+          <div><label>Package <span class="req">*</span></label><select id="plan"></select></div>
+          <div><label>Account number</label><input id="acct" readonly><div class="hint">Auto-generated. Customer uses this when paying.</div></div>
+          <div class="full"><label class="check"><input type="checkbox" id="act" checked> Activate the package now and send confirmation message</label></div>
+          <div class="full"><label>Notes</label><textarea id="notes" placeholder="Optional"></textarea></div>
+        </div>
+        <div class="err" id="err" style="margin-top:14px"></div>
+      </div>
+      <div class="modal-foot"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-gold">Save customer</button></div>
+    </form>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+const A = App; let db = A.get();
+A.shell('customers', 'Customers', 'Everyone who buys WiFi from you');
+document.getElementById('sIco').innerHTML = A.ic('search', 16);
+document.getElementById('add').innerHTML = A.ic('plus', 16) + ' Add customer';
+const $ = id => document.getElementById(id);
+
+function render() {
+  db = A.get();
+  const q = $('q').value.trim().toLowerCase();
+  const list = db.customers.filter(c => !q || (c.name + c.phone + c.account).toLowerCase().includes(q));
+  $('rows').innerHTML = list.length ? list.map(c => {
+    const sub = A.currentSub(db, c.id), st = A.statusOf(sub), pl = A.planOf(db, c.planId);
+    return `<tr><td><div class="who"><div class="av">${A.initials(c.name)}</div><div><div class="strong">${A.esc(c.name)}</div><div class="small muted">${A.esc(c.phone)}</div></div></div></td>
+      <td><span class="badge b-info">${A.esc(c.account)}</span></td><td>${A.esc(c.location)}</td><td>${A.esc(c.connType)}<div class="small muted">${A.esc(c.username)}</div></td>
+      <td>${pl ? A.esc(pl.name) : '<span class="muted">-</span>'}</td><td><span class="badge ${st.cls}">${st.label}</span></td>
+      <td class="acts"><button class="btn btn-ghost btn-sm" data-a="${c.id}">${st.k === 'active' || st.k === 'expiring' ? 'Renew' : 'Activate'}</button><button class="btn btn-danger btn-sm" data-d="${c.id}">Delete</button></td></tr>`;
+  }).join('') : `<tr><td colspan="7"><div class="empty"><div class="big">No customers found</div>Add your first customer to get started.</div></td></tr>`;
+  $('rows').querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
+    const c = A.custOf(db, b.dataset.a), pl = A.planOf(db, c.planId);
+    if (!pl) return A.toast('Assign a package to this customer first', true);
+    if (!confirm(`Activate ${pl.name} (${A.money(pl.price)}) for ${c.name}?`)) return;
+    A.activate(db, c.id, pl.id); A.save(db); A.toast('Package activated'); render();
+  });
+  $('rows').querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
+    const c = A.custOf(db, b.dataset.d);
+    if (!confirm(`Delete ${c.name} and their subscriptions?`)) return;
+    db.customers = db.customers.filter(x => x.id !== c.id); db.subs = db.subs.filter(s => s.customerId !== c.id); A.save(db); A.toast('Customer deleted'); render();
+  });
+}
+$('q').addEventListener('input', render);
+
+$('add').onclick = () => {
+  db = A.get(); $('f').reset(); $('err').style.display = 'none';
+  $('acct').value = 'WB' + (db.counter + 1);
+  $('router').innerHTML = db.routers.filter(r => r.status === 'Active').map(r => `<option value="${r.id}">${A.esc(r.name)}</option>`).join('') || '<option value="">Add a router first</option>';
+  $('plan').innerHTML = db.plans.filter(p => p.status === 'Active').map(p => `<option value="${p.id}">${A.esc(p.name)} - ${A.money(p.price)} / ${A.durLabel(p)}</option>`).join('') || '<option value="">Add a package first</option>';
+  A.openModal('m');
+};
+
+$('f').addEventListener('submit', e => {
+  e.preventDefault(); db = A.get();
+  const phone = $('phone').value.replace(/[\s-]/g, '');
+  const norm = phone.replace(/^\+?254/, '0');
+  const v = { name: $('name').value.trim(), phone: norm, email: $('email').value.trim(), idNo: $('idno').value.trim(), location: $('loc').value.trim(), connType: $('ctype').value, routerId: $('router').value, username: $('user').value.trim(), password: $('pwd').value.trim(), planId: $('plan').value, notes: $('notes').value.trim() };
+  const msg = !v.name ? 'Enter the customer name.' : !/^0[17]\d{8}$/.test(v.phone) ? 'Enter a valid Kenyan phone number (e.g. 0712345678).'
+    : v.email && !/^\S+@\S+\.\S+$/.test(v.email) ? 'Enter a valid email address.' : !v.location ? 'Enter the customer location.'
+    : !v.routerId ? 'Add a MikroTik router first.' : !v.username ? 'Enter a username.' : !v.password ? 'Enter a password.'
+    : db.customers.some(c => c.username === v.username && c.routerId === v.routerId) ? 'That username already exists on this router.'
+    : db.customers.some(c => c.phone === v.phone) ? 'A customer with this phone number already exists.' : !v.planId ? 'Add a package first.' : '';
+  if (msg) { $('err').textContent = msg; $('err').style.display = 'block'; return; }
+  db.counter += 1;
+  const c = { id: A.uid('c'), ...v, account: 'WB' + db.counter, created: new Date().toISOString() };
+  db.customers.push(c);
+  if ($('act').checked) A.activate(db, c.id, v.planId);
+  A.save(db); A.closeModal('m'); A.toast(`Customer added - account ${c.account}`); render();
+});
+render();
+</script>
+</body>
+</html>

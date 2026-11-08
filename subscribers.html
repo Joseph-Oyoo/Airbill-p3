@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Subscribers - AirBill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <section class="content">
+      <div class="grid g3 mb" id="stats"></div>
+      <div class="toolbar">
+        <div class="search"><span id="sIco"></span><input id="q" placeholder="Search name, phone or account"></div>
+        <div class="tabs" id="tabs"><button class="on" data-f="all">All active</button><button data-f="expiring">Expiring soon</button></div>
+      </div>
+      <div class="card"><div class="table-wrap">
+        <table class="tbl">
+          <thead><tr><th>Subscriber</th><th>Account No.</th><th>Package</th><th>Router</th><th>Expires</th><th style="min-width:150px">Time left</th><th>Status</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div></div>
+    </section>
+  </div>
+</div>
+<script src="app.js"></script>
+<script>
+const A = App; let db = A.get(), filter = 'all';
+A.shell('subscribers', 'Subscribers', 'Customers with a currently active package');
+document.getElementById('sIco').innerHTML = A.ic('search', 16);
+const $ = id => document.getElementById(id);
+
+function render() {
+  db = A.get();
+  const all = db.customers.map(c => ({ c, sub: A.currentSub(db, c.id) })).map(r => ({ ...r, st: A.statusOf(r.sub) })).filter(r => r.st.k === 'active' || r.st.k === 'expiring');
+  const st = (i, l, v, s) => `<div class="card stat"><div class="ico">${A.ic(i)}</div><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`;
+  const exp = all.filter(r => r.st.k === 'expiring').length;
+  const online = db.customers.length - all.length;
+  $('stats').innerHTML = st('wifi', 'Active subscribers', all.length, 'Currently connected plans') + st('clock', 'Expiring in 48h', exp, 'Send reminders from Messages') + st('users', 'Inactive customers', online, 'Expired or never activated');
+
+  const q = $('q').value.trim().toLowerCase();
+  const list = all.filter(r => (filter === 'all' || r.st.k === filter) && (!q || (r.c.name + r.c.phone + r.c.account).toLowerCase().includes(q))).sort((a, b) => new Date(a.sub.expiry) - new Date(b.sub.expiry));
+  $('rows').innerHTML = list.length ? list.map(r => {
+    const pl = A.planOf(db, r.sub.planId), rt = A.routerOf(db, r.c.routerId);
+    const total = new Date(r.sub.expiry) - new Date(r.sub.start), pct = Math.max(2, Math.min(100, r.st.left / total * 100));
+    return `<tr><td><div class="who"><div class="av">${A.initials(r.c.name)}</div><div><div class="strong">${A.esc(r.c.name)}</div><div class="small muted">${A.esc(r.c.phone)}</div></div></div></td>
+      <td><span class="badge b-info">${A.esc(r.c.account)}</span></td><td>${pl ? A.esc(pl.name) : '-'}</td><td class="small">${rt ? A.esc(rt.name) : '-'}</td><td class="small">${A.dt(r.sub.expiry)}</td>
+      <td><div class="small strong" style="margin-bottom:5px">${A.timeLeft(r.st.left)}</div><div class="bar"><i class="${r.st.k === 'expiring' ? 'low' : ''}" style="width:${pct}%"></i></div></td>
+      <td><span class="badge ${r.st.cls}">${r.st.label}</span></td>
+      <td class="acts"><button class="btn btn-ghost btn-sm" data-x="${r.c.id}">Extend</button><button class="btn btn-danger btn-sm" data-k="${r.c.id}">Disconnect</button></td></tr>`;
+  }).join('') : `<tr><td colspan="8"><div class="empty"><div class="big">No active subscribers</div>Subscribers appear here after a payment activates their package.</div></td></tr>`;
+
+  $('rows').querySelectorAll('[data-x]').forEach(b => b.onclick = () => {
+    const c = A.custOf(db, b.dataset.x), s = A.currentSub(db, c.id), pl = A.planOf(db, s.planId);
+    if (!pl) return A.toast('Package no longer exists', true);
+    if (!confirm(`Extend ${c.name} by another ${A.durLabel(pl)} (${pl.name})?`)) return;
+    A.activate(db, c.id, pl.id); A.save(db); A.toast('Subscription extended'); render();
+  });
+  $('rows').querySelectorAll('[data-k]').forEach(b => b.onclick = () => {
+    const c = A.custOf(db, b.dataset.k);
+    if (!confirm(`Disconnect ${c.name} now? Their package will end immediately.`)) return;
+    const s = A.currentSub(db, c.id); s.expiry = new Date().toISOString(); A.save(db); A.toast('Subscriber disconnected'); render();
+  });
+}
+$('q').addEventListener('input', render);
+$('tabs').querySelectorAll('button').forEach(b => b.onclick = () => { filter = b.dataset.f; $('tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); render(); });
+render(); setInterval(render, 60000);
+</script>
+</body>
+</html>
