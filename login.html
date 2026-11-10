@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" data-public>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in - AirBill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+.auth{min-height:100vh;display:grid;grid-template-columns:1.05fr 1fr}
+.auth-hero{position:relative;overflow:hidden;color:#cdd5e3;padding:48px 56px;display:flex;flex-direction:column;justify-content:space-between;
+  background:radial-gradient(900px 520px at 8% -5%,rgba(201,163,91,.24),transparent 60%),linear-gradient(185deg,var(--ink),#09111f)}
+.auth-hero::after{content:"";position:absolute;right:-160px;bottom:-160px;width:420px;height:420px;border-radius:50%;border:1px solid rgba(201,163,91,.25);box-shadow:0 0 0 60px rgba(201,163,91,.04),0 0 0 120px rgba(201,163,91,.03)}
+.auth-hero .brand{border:0;padding:0;margin:0}
+.auth-hero h1{font-size:46px;color:#fff;line-height:1.1;margin-bottom:16px}
+.auth-hero h1 em{font-style:normal;color:var(--gold2)}
+.auth-hero p{max-width:450px;color:#9fb0c9;font-size:15.5px}
+.points{list-style:none;display:grid;gap:16px;margin-top:34px;position:relative;z-index:1}
+.points li{display:flex;gap:14px;align-items:flex-start}
+.points .pi{width:40px;height:40px;border-radius:11px;background:rgba(201,163,91,.12);color:var(--gold2);display:grid;place-items:center;flex:none;border:1px solid rgba(201,163,91,.3)}
+.points b{display:block;color:#fff;font-weight:600}
+.points span{font-size:13px;color:#8d9ab1}
+.auth-panel{background:var(--bg);display:grid;place-items:center;padding:40px 24px}
+.auth-card{width:100%;max-width:430px}
+.auth-card .tabs{width:100%}
+.auth-card .tabs button{flex:1;padding:9px 15px}
+.auth-card h2{font-size:34px;margin:26px 0 4px}
+.auth-card .lead{color:var(--muted);margin-bottom:20px}
+.field{margin-bottom:16px}
+.reg-only{display:none}
+#f.register .reg-only{display:block}
+.pw{position:relative}
+.pw input{padding-right:64px}
+.pw button{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:0;color:var(--goldd);font-size:12.5px;font-weight:600;padding:7px 10px;border-radius:8px}
+.pw button:hover{background:#f6efdd}
+.alert{display:none;background:var(--badbg);color:var(--bad);border:1px solid #efc8c8;padding:11px 14px;border-radius:10px;font-size:13.5px;margin-bottom:16px}
+.alert.show{display:block}
+.alert.ok{background:var(--okbg);color:var(--ok);border-color:#bfe3cf}
+.auth-foot{text-align:center;margin-top:22px;font-size:13.5px;color:var(--muted)}
+.auth-foot a{color:var(--goldd);font-weight:600;cursor:pointer}
+.auth-foot a:hover{text-decoration:underline}
+.m-brand{display:none;margin-bottom:26px;border:0;padding:0}
+.m-brand .brand-name{color:var(--ink)}
+@media(max-width:900px){
+  .auth{grid-template-columns:1fr}
+  .auth-hero{display:none}
+  .m-brand{display:flex}
+  .auth-card h2{font-size:28px}
+}
+</style>
+</head>
+<body>
+<div class="auth">
+  <aside class="auth-hero">
+    <div class="brand"><div class="brand-mark" data-i="wifi" data-s="22"></div><div><div class="brand-name">AirBill</div><div class="brand-tag">WiFi Billing Suite</div></div></div>
+    <div>
+      <h1>Bill smarter.<br><em>Keep every customer connected.</em></h1>
+      <p>One calm place to manage packages, subscribers, M-Pesa payments and your MikroTik routers.</p>
+      <ul class="points">
+        <li><div class="pi" data-i="cash" data-s="20"></div><div><b>M-Pesa payments, tracked</b><span>Every transaction matched to a customer account number.</span></div></li>
+        <li><div class="pi" data-i="clock" data-s="20"></div><div><b>Never miss an expiry</b><span>See who is about to expire and remind them in one click.</span></div></li>
+        <li><div class="pi" data-i="router" data-s="20"></div><div><b>Built for MikroTik</b><span>Hotspot and PPPoE packages with matching router profiles.</span></div></li>
+      </ul>
+    </div>
+    <div class="small" style="color:#6f7c93;position:relative;z-index:1">&copy; <span id="yr"></span> AirBill. All rights reserved.</div>
+  </aside>
+
+  <main class="auth-panel">
+    <div class="auth-card">
+      <div class="brand m-brand"><div class="brand-mark" data-i="wifi" data-s="22"></div><div><div class="brand-name">AirBill</div><div class="brand-tag">WiFi Billing Suite</div></div></div>
+
+      <div class="tabs" id="tabs"><button type="button" class="on" data-m="login">Sign in</button><button type="button" data-m="register">Create account</button></div>
+      <h2 id="title"></h2>
+      <p class="lead" id="sub"></p>
+      <div class="alert" id="err" role="alert"></div>
+
+      <form id="f" novalidate>
+        <div class="field reg-only"><label for="name">Full name <span class="req">*</span></label><input id="name" autocomplete="name" placeholder="e.g. Achieng Otieno"></div>
+        <div class="field"><label for="email">Email address <span class="req">*</span></label><input id="email" type="email" autocomplete="username" placeholder="you@example.com"></div>
+        <div class="field">
+          <label for="pw">Password <span class="req">*</span></label>
+          <div class="pw"><input id="pw" type="password" placeholder="Enter your password"><button type="button" id="eye">Show</button></div>
+          <div class="reg-only"><div class="bar" style="margin-top:9px"><i id="mbar" style="width:0"></i></div><div class="hint" id="mtxt">Use at least 8 characters.</div></div>
+        </div>
+        <div class="field reg-only"><label for="pw2">Confirm password <span class="req">*</span></label><input id="pw2" type="password" autocomplete="new-password" placeholder="Re-enter your password"></div>
+        <div class="field"><label class="check"><input type="checkbox" id="remember" checked> Keep me signed in on this device</label></div>
+        <button class="btn btn-gold" id="go" style="width:100%;justify-content:center;padding:13px">Sign in</button>
+      </form>
+      <div class="auth-foot" id="foot"></div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+<script>
+const A = App, $ = id => document.getElementById(id);
+document.querySelectorAll('[data-i]').forEach(el => el.innerHTML = A.ic(el.dataset.i, Number(el.dataset.s) || 18));
+$('yr').textContent = new Date().getFullYear();
+
+// Where to go after signing in (only our own pages are allowed)
+function nextPage() {
+  const n = new URLSearchParams(location.search).get('next') || '';
+  return /^[\w-]+\.html$/i.test(n) && n.toLowerCase() !== 'login.html' ? n : 'index.html';
+}
+if (A.auth.current()) location.replace(nextPage());
+
+let mode = A.auth.hasUsers() ? 'login' : 'register';
+const firstRun = !A.auth.hasUsers();
+
+function showMsg(text, ok) { const e = $('err'); e.textContent = text || ''; e.className = 'alert' + (text ? ' show' : '') + (ok ? ' ok' : ''); }
+
+function setMode(m) {
+  mode = m; showMsg('');
+  const reg = m === 'register';
+  $('f').classList.toggle('register', reg);
+  $('tabs').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
+  $('title').textContent = reg ? 'Create your account' : 'Welcome back';
+  $('sub').textContent = reg ? (A.auth.hasUsers() ? 'Set up your AirBill access in under a minute.' : 'Create the administrator account to get started.') : 'Sign in to open your dashboard.';
+  $('go').textContent = reg ? 'Create account' : 'Sign in';
+  $('pw').placeholder = reg ? 'At least 8 characters' : 'Enter your password';
+  $('pw').autocomplete = reg ? 'new-password' : 'current-password';
+  $('foot').innerHTML = reg ? 'Already have an account? <a id="sw">Sign in</a>' : 'New here? <a id="sw">Create an account</a>';
+  $('sw').onclick = () => setMode(reg ? 'login' : 'register');
+  document.title = (reg ? 'Create account' : 'Sign in') + ' - AirBill';
+}
+$('tabs').querySelectorAll('button').forEach(b => b.onclick = () => setMode(b.dataset.m));
+
+$('eye').onclick = () => {
+  const show = $('pw').type === 'password';
+  $('pw').type = show ? 'text' : 'password'; $('pw2').type = show ? 'text' : 'password';
+  $('eye').textContent = show ? 'Hide' : 'Show';
+};
+
+// password strength meter
+$('pw').addEventListener('input', () => {
+  const v = $('pw').value;
+  let s = 0;
+  if (v.length >= 8) s++; if (v.length >= 12) s++;
+  if (/[a-z]/.test(v) && /[A-Z]/.test(v)) s++;
+  if (/\d/.test(v)) s++;
+  if (/[^A-Za-z0-9]/.test(v)) s++;
+  const label = !v ? 'Use at least 8 characters.' : s <= 1 ? 'Weak' : s === 2 ? 'Fair' : s === 3 ? 'Good' : 'Strong';
+  $('mbar').style.width = (v ? Math.max(12, s * 20) : 0) + '%';
+  $('mbar').className = s <= 2 ? 'low' : '';
+  $('mtxt').textContent = label;
+});
+
+$('f').addEventListener('submit', async e => {
+  e.preventDefault(); showMsg('');
+  const btn = $('go'), label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Please wait...';
+  try {
+    if (mode === 'register') {
+      if ($('pw').value !== $('pw2').value) throw new Error('Passwords do not match.');
+      await A.auth.register({ name: $('name').value, email: $('email').value, password: $('pw').value }, $('remember').checked);
+    } else {
+      await A.auth.login($('email').value, $('pw').value, $('remember').checked);
+    }
+    location.replace(nextPage());
+  } catch (err) {
+    showMsg(err.message); btn.disabled = false; btn.textContent = label;
+  }
+});
+
+setMode(mode);
+if (firstRun) showMsg('Welcome! No account exists yet - create the administrator account first.', true);
+</script>
+</body>
+</html>
