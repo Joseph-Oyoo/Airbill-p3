@@ -1,4 +1,5 @@
 /* AirBill - shared data layer, helpers and page shell */
+/* AirBill - shared data layer, helpers and page shell */
 (function () {
   'use strict';
   const KEY = 'airbill_v1';
@@ -161,6 +162,85 @@
     if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, done); else done();
   }
 
+  /* ---------- authentication (browser-only) ---------- */
+  const UKEY = 'airbill_users', SKEY = 'airbill_session';
+  const PUBLIC = document.documentElement.hasAttribute('data-public');
+  const readUsers = () => { try { return JSON.parse(localStorage.getItem(UKEY)) || []; } catch (e) { return []; } };
+  const writeUsers = u => { try { localStorage.setItem(UKEY, JSON.stringify(u)); return true; } catch (e) { return false; } };
+  const hasUsers = () => readUsers().length > 0;
+  const canSubtle = () => !!(window.crypto && window.crypto.subtle);
+
+  function newSalt() {
+    const a = new Uint8Array(16);
+    try { crypto.getRandomValues(a); } catch (e) { for (let i = 0; i < a.length; i++) a[i] = Math.floor(Math.random() * 256); }
+    return Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
+  }
+  async function hashPw(pw, salt, method) {
+    if (method === 'p1') { // PBKDF2-SHA256 (needs localhost, https or file://)
+      const enc = new TextEncoder();
+      const key = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits']);
+      const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(salt), iterations: 120000 }, key, 256);
+      return 'p1:' + btoa(String.fromCharCode.apply(null, new Uint8Array(bits)));
+    }
+    let h = 5381; const s = salt + pw; // weak fallback for insecure contexts
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+    return 'w1:' + h;
+  }
+
+  function current() {
+    let raw = null;
+    try { raw = sessionStorage.getItem(SKEY) || localStorage.getItem(SKEY); } catch (e) { }
+    if (!raw) return null;
+    try {
+      const s = JSON.parse(raw), u = readUsers().find(x => x.email === s.email);
+      return u ? { name: u.name, email: u.email, role: u.role } : null;
+    } catch (e) { return null; }
+  }
+  function startSession(u, remember) {
+    try {
+      sessionStorage.removeItem(SKEY); localStorage.removeItem(SKEY);
+      (remember ? localStorage : sessionStorage).setItem(SKEY, JSON.stringify({ email: u.email, at: Date.now() }));
+    } catch (e) { }
+  }
+  async function register(data, remember) {
+    const name = String(data.name || '').trim(), email = String(data.email || '').trim().toLowerCase(), password = String(data.password || '');
+    if (name.length < 2) throw new Error('Enter your full name.');
+    if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error('Enter a valid email address.');
+    if (password.length < 8) throw new Error('Password must be at least 8 characters.');
+    const users = readUsers();
+    if (users.some(u => u.email === email)) throw new Error('An account with this email already exists. Please sign in.');
+    const salt = newSalt(), method = canSubtle() ? 'p1' : 'w1';
+    const u = { id: uid('u'), name, email, salt, hash: await hashPw(password, salt, method), role: users.length ? 'Staff' : 'Admin', created: new Date().toISOString() };
+    users.push(u);
+    if (!writeUsers(users)) throw new Error('Could not save the account - browser storage is blocked.');
+    startSession(u, remember);
+    return u;
+  }
+  async function login(email, password, remember) {
+    email = String(email || '').trim().toLowerCase();
+    const u = readUsers().find(x => x.email === email);
+    if (!email || !password) throw new Error('Enter your email and password.');
+    const bad = new Error('Incorrect email or password.');
+    if (!u) throw bad;
+    const method = String(u.hash).slice(0, 2);
+    if (method === 'p1' && !canSubtle()) throw new Error('This page must be opened from localhost, https or as a local file to sign in.');
+    if ((await hashPw(String(password), u.salt, method)) !== u.hash) throw bad;
+    startSession(u, remember);
+    return u;
+  }
+  function logout() {
+    try { sessionStorage.removeItem(SKEY); localStorage.removeItem(SKEY); } catch (e) { }
+    location.replace('login.html');
+  }
+
+  // Guard: every page except the login page needs a signed-in user.
+  function toLogin() {
+    const here = location.pathname.split('/').pop() || 'index.html';
+    location.replace('login.html?next=' + encodeURIComponent(here));
+  }
+  if (!PUBLIC && !current()) { document.documentElement.style.visibility = 'hidden'; toLogin(); }
+  window.addEventListener('pageshow', e => { if (e.persisted && !PUBLIC && !current()) toLogin(); }); // Back button after sign-out
+
   const NAV = [
     ['Overview', [['index', 'Dashboard', 'home']]],
     ['Operations', [['subscribers', 'Subscribers', 'wifi'], ['customers', 'Customers', 'users'], ['payments', 'Payments', 'cash'], ['messages', 'Messages', 'chat']]],
@@ -169,6 +249,7 @@
 
   function shell(active, title, sub) {
     document.title = title + ' - AirBill';
+    const me = current() || { name: 'Guest', email: '', role: '' };
     const sb = document.getElementById('sidebar');
     sb.innerHTML = `
       <a class="brand" href="index.html">
@@ -176,19 +257,24 @@
         <div><div class="brand-name">AirBill</div><div class="brand-tag">WiFi Billing Suite</div></div>
       </a>
       <nav class="nav">${NAV.map(g => `<div class="nav-group">${g[0]}</div>` + g[1].map(i => `<a href="${i[0]}.html" class="${i[0] === active ? 'active' : ''}">${ic(i[2])}${i[1]}</a>`).join('')).join('')}</nav>
-      <div class="side-foot">Data is stored in this browser.<br><button id="wipe">Clear all data</button></div>`;
+      <div class="side-foot">
+        <div class="who" style="margin-bottom:12px"><div class="av" style="background:linear-gradient(135deg,var(--gold2),var(--goldd));color:var(--ink)">${esc(initials(me.name))}</div><div style="min-width:0"><div style="color:#fff;font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(me.name)}</div><div style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(me.role)}${me.role ? ' &middot; ' : ''}${esc(me.email)}</div></div></div>
+        <button id="logout" class="btn btn-sm" style="width:100%;justify-content:center;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);color:#e6ebf5;text-decoration:none;margin-top:0;font-size:13px;padding:9px">Sign out</button>
+        <div style="margin-top:12px">Data is stored in this browser.<br><button id="wipe">Clear all data</button></div>
+      </div>`;
     const bd = document.createElement('div'); bd.className = 'backdrop'; document.body.appendChild(bd);
     const tb = document.getElementById('topbar');
     tb.innerHTML = `<button class="burger" id="burger" aria-label="Menu">${ic('menu', 20)}</button>
       <div><h1>${esc(title)}</h1><p>${esc(sub || '')}</p></div>
-      <div class="top-right"><span class="date-chip">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span><div class="avatar">AD</div></div>`;
+      <div class="top-right"><span class="date-chip">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span><div class="avatar" title="${esc(me.name)}">${esc(initials(me.name))}</div></div>`;
     const tog = () => { sb.classList.toggle('open'); bd.classList.toggle('open'); };
     document.getElementById('burger').onclick = tog; bd.onclick = tog;
+    document.getElementById('logout').onclick = logout;
     document.getElementById('wipe').onclick = () => {
       if (confirm('This permanently deletes ALL customers, packages, payments and settings stored in this browser. Continue?')) { save(emptyDB()); location.reload(); }
     };
     wireModals();
   }
 
-  window.App = { get, save, uid, esc, money, dt, dshort, initials, ic, durMs, durLabel, planOf, custOf, routerOf, currentSub, statusOf, timeLeft, modeSummary, payHint, addMessage, activate, sendReminder, toast, openModal, closeModal, copy, shell, H, D, WINDOW };
+  window.App = { auth: { current, register, login, logout, hasUsers }, get, save, uid, esc, money, dt, dshort, initials, ic, durMs, durLabel, planOf, custOf, routerOf, currentSub, statusOf, timeLeft, modeSummary, payHint, addMessage, activate, sendReminder, toast, openModal, closeModal, copy, shell, H, D, WINDOW };
 })();
